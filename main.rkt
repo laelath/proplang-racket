@@ -1,4 +1,4 @@
 #lang racket
 
-(require "proplang.rkt")
-(provide (all-from-out "proplang.rkt"))
+(require "proplang.rkt" "shrinking.rkt")
+(provide (all-from-out "proplang.rkt" "shrinking.rkt"))
