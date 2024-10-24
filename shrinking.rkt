@@ -17,7 +17,7 @@
         ['() v]
         [(cons v vs)
          (if (equal? (check-property prop (dict-set env x v)) 'fail)
-             (shrink-var env x v shrinker)
+             (shrink-var (dict-set env x v) x shrinker)
              (loop vs))])))
   (for/fold ([env env])
             ([x (property-variables prop)])
