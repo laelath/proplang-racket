@@ -5,54 +5,52 @@
 
 (provide run-loop shrinking-run-loop)
 
-(define (run-rackcheck-generator g sz) (shrink-tree-val (g (current-pseudo-random-generator) sz)))
+(define (run-rackcheck-generator g sz)
+  (shrink-tree-val (g (current-pseudo-random-generator) sz)))
 
-(define (run-generators generators n)
-  (let ([size (inexact->exact (round (log n 2)))])
-    (dict-map/copy generators
-                   (lambda (key gen) (values key (run-rackcheck-generator gen size))))))
+(struct results (foundbug? passed discards counterexample))
 
-(struct run-result (search-time foundbug passed discards counterexample)
-  #:transparent)
-
-(struct shrink-result (shrink-time shrunk-counterexample)
-  #:transparent)
-
-(define (run-result->json-str rr sr)
-  (format "[|{\"search-time\": ~a, \"shrink-time\": ~a, \"foundbug\": ~a, \"passed\": ~a, \"discards\": ~a, \"counterexample\": \"~a\", \"shrunk-counterexample\": \"~a\"}|]"
-          (run-result-search-time rr)
-          (if sr (shrink-result-shrink-time sr) "n/a")
-          (if (run-result-foundbug rr) "true" "false")
-          (run-result-passed rr)
-          (run-result-discards rr)
-          (run-result-counterexample rr)
-          (if sr (shrink-result-shrunk-counterexample sr) "n/a")))
-
-(define (generation-loop tests p generators)
-  (define start (current-inexact-monotonic-milliseconds))
+(define (generation-loop tests p)
   (let loop ([n 0]
              [passed 0]
              [discards 0])
     (if (= n tests)
-        (run-result (- (current-inexact-monotonic-milliseconds) start) #f passed discards #f)
-        (let ([env (run-generators generators n)])
-          (case (check-property p env)
-            [(fail) (run-result (- (current-inexact-monotonic-milliseconds) start)
-                                #t passed discards env)]
+        (results #f passed discards #f)
+        (let-values ([(res env) (generate-and-check p run-rackcheck-generator n)])
+          (case res
+            [(fail) (results #t passed discards env)]
             [(pass) (loop (add1 n) (add1 passed) discards)]
             [(discard) (loop (add1 n) passed (add1 discards))])))))
 
-(define (run-loop tests p generators)
-  (displayln (run-result->json-str (generation-loop tests p generators) #f)))
+(define (results->json-str search-time res)
+  (format "[|{\"search-time\": ~a, \"foundbug\": ~a, \"passed\": ~a, \"discards\": ~a, \"counterexample\": \"~a\"}|]"
+          search-time
+          (if (results-foundbug? res) "true" "false")
+          (results-passed res)
+          (results-discards res)
+          (results-counterexample res)))
 
-(define (shrinking-run-loop tests p generators shrinkers)
-  (define result (generation-loop tests p generators))
-  (if (run-result-foundbug result)
-      (let* ([start (current-inexact-monotonic-milliseconds)]
-             [shrink-result (shrink-eager p shrinkers (run-result-counterexample result))]
-             [search-time (- (current-inexact-monotonic-milliseconds) start)])
-        (displayln (run-result->json-str
-                    result
-                    (shrink-result search-time shrink-result))))
-      (displayln (run-result->json-str result))))
+(define (shrink-results->json-str search-time shrink-time shrunk res)
+  (format "[|{\"search-time\": ~a, \"shrink-time\": ~a, \"foundbug\": ~a, \"passed\": ~a, \"discards\": ~a, \"counterexample\": \"~a\", \"shrunk-counterexample\": \"~a\"}|]"
+          search-time
+          shrink-time
+          (if (results-foundbug? res) "true" "false")
+          (results-passed res)
+          (results-discards res)
+          (results-counterexample res)
+          shrunk))
 
+(define (real-time proc . lst)
+  (define-values (res _cpu real _gc) (time-apply proc lst))
+  (values (first res) real))
+
+(define (run-loop tests p)
+  (define-values (res real) (real-time generation-loop tests p))
+  (displayln (results->json-str real res)))
+
+(define (shrinking-run-loop tests p)
+  (define-values (res search-time) (real-time generation-loop tests p))
+  (if (results-foundbug? res)
+      (let-values ([(shrunk shrink-time) (real-time shrink-eager p (results-counterexample res))])
+        (displayln (shrink-results->json-str search-time shrink-time shrunk res)))
+      (displayln (shrink-results->json-str search-time #f #f res))))
