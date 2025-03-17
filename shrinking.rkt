@@ -21,8 +21,11 @@
                (across vs))]))))
   (match prop
     [(Forall x augments body)
+     (define contract ((dict-ref augments '#:contract (const any/c)) env))
      (if (dict-has-key? augments '#:shrink)
-         (let* ([shrinker ((dict-ref augments '#:shrink) env)]
+         (let* ([shrinker (invariant-assertion
+                           (-> contract (listof contract))
+                           ((dict-ref augments '#:shrink) env))]
                 [v (shrink-var body env x shrinker)])
            (shrink-eager body (dict-set env x v)))
          (shrink-eager body env))]

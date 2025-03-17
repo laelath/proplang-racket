@@ -68,9 +68,8 @@
     [(Forall var augments body)
      (unless (dict-has-key? env var)
        (error 'missing-variable))
-     (unless (implies (dict-has-key? augments '#:contract)
-                      (((dict-ref augments '#:contract) env) (dict-ref env var)))
-       (error 'contract-failure))
+     (when (dict-has-key? augments '#:contract)
+       (invariant-assertion ((dict-ref augments '#:contract) env) (dict-ref env var)))
      (check-property body env)]
     [(Implies prop body)
      (if (prop env) (check-property body env) 'discard)]
@@ -84,7 +83,9 @@
       [(Forall var augments body)
        (unless (dict-has-key? augments '#:gen)
          (error 'no-generator))
-       (loop body (dict-set env var (apply sample ((dict-ref augments '#:gen) env) args)))]
+       (define contract ((dict-ref augments '#:contract (const any/c)) env))
+       (define val (invariant-assertion contract (apply sample ((dict-ref augments '#:gen) env) args)))
+       (loop body (dict-set env var val))]
       [(Implies prop body)
        (loop body env)]
       [(Check prop) env])))
@@ -96,7 +97,9 @@
       [(Forall var augments body)
        (unless (dict-has-key? augments '#:gen)
          (error 'no-generator))
-       (loop body (dict-set env var (apply sample ((dict-ref augments '#:gen) env) args)))]
+       (define contract ((dict-ref augments '#:contract (const any/c)) env))
+       (define val (invariant-assertion contract (apply sample ((dict-ref augments '#:gen) env) args)))
+       (loop body (dict-set env var val))]
       [(Implies prop body)
        (if (prop env)
            (loop body env)
