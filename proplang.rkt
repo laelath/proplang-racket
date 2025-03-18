@@ -4,12 +4,14 @@
 (require (for-syntax syntax/parse syntax/transformer))
 
 (provide
+ property
  property?
  add-augments
  (contract-out
   [check-property (-> property? dict? (or/c 'discard 'fail 'pass))]
-  [generate (-> property? (-> any/c ... any/c any/c) ... any/c dict?)]
-  [generate-and-check (-> property? (-> any/c ... any/c any/c) ... any/c dict?)]
+  ;; TODO: contracts for generation functions
+  [generate (-> property? any/c any/c ... dict?)]
+  [generate-and-check (-> property? any/c any/c ... (values (or/c 'pass 'fail 'discard) dict?))]
   [struct Forall ([var symbol?] [augments dict?] [body property?])]
   [struct Implies ([prop (-> dict? any/c)] [body property?])]
   [struct Check ([prop (-> dict? any/c)])]))
@@ -83,8 +85,9 @@
       [(Forall var augments body)
        (unless (dict-has-key? augments '#:gen)
          (error 'no-generator))
-       (define contract ((dict-ref augments '#:contract (const any/c)) env))
-       (define val (invariant-assertion contract (apply sample ((dict-ref augments '#:gen) env) args)))
+       (define val (apply sample ((dict-ref augments '#:gen) env) args))
+       (when (dict-has-key? augments '#:contract)
+         (invariant-assertion ((dict-ref augments '#:contract) env) val))
        (loop body (dict-set env var val))]
       [(Implies prop body)
        (loop body env)]
@@ -97,8 +100,9 @@
       [(Forall var augments body)
        (unless (dict-has-key? augments '#:gen)
          (error 'no-generator))
-       (define contract ((dict-ref augments '#:contract (const any/c)) env))
-       (define val (invariant-assertion contract (apply sample ((dict-ref augments '#:gen) env) args)))
+       (define val (apply sample ((dict-ref augments '#:gen) env) args))
+       (when (dict-has-key? augments '#:contract)
+         (invariant-assertion ((dict-ref augments '#:contract) env) val))
        (loop body (dict-set env var val))]
       [(Implies prop body)
        (if (prop env)
