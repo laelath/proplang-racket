@@ -11,35 +11,48 @@
 
 (struct results (foundbug? passed discards counterexample))
 
-(define (generation-loop tests p [max-workers (processor-count)])
+(define (box-faa! b n)
+  (define m (unbox b))
+  (if (box-cas! b m (+ m n))
+      m
+      (box-faa! b n)))
 
-  ;; worker thunk
-  (define (worker-future n)
-    (define rng (current-pseudo-random-generator))
-    (future
-     (thunk
-      (let-values ([(res env) (generate-and-check p run-rackcheck-generator rng n)])
-         (cons res env)))))
+(define (generation-loop tests p [num-workers (processor-count)])
 
-  (define num-workers (min tests max-workers))
+  (define counter (box 0))
+  (define found-counterexample? (box #f))
 
-  (let loop ([workers (build-list num-workers worker-future)]
-             [next-test 0]
-             [passed 0]
-             [discards 0])
-    (match workers
-      ['() (results #f passed discards #f)]
-      [(cons f rst)
-       (define res (touch f))
-       (case (car res)
-         [(fail) (results #t passed discards (cdr res))]
-         [(pass discard)
-          (loop (if (< (+ next-test num-workers) tests)
-                    (append rst (list (worker-future (+ next-test num-workers))))
-                    rst)
-                (add1 next-test)
-                (if (eq? (car res) 'pass) (add1 passed) passed)
-                (if (eq? (car res) 'discards) (add1 discards) discards))])])))
+  (define (worker-thunk)
+    ;; each thread has its own random number generator
+    ;; caution - might be seeding with the same value (uses current-milliseconds to seed)
+    (define rng (make-pseudo-random-generator))
+    (let worker-loop ([passed 0]
+                      [discards 0])
+      (define n (box-faa! counter 1))
+      (cond
+        [(>= n tests) (results #f passed discards #f)]
+        [(unbox found-counterexample?) (results #f passed discards #f)]
+        [else
+         (let-values ([(res env) (generate-and-check p run-rackcheck-generator rng n)])
+           (case res
+             [(fail)
+              (set-box! found-counterexample? #t)
+              (results #t passed discards env)]
+             [(pass) (worker-loop (add1 passed) discards)]
+             [(discard) (worker-loop passed (add1 discards))]))])))
+
+  ;; spawn workers
+  (define workers (build-list num-workers (λ (_) (future worker-thunk))))
+
+  ;; touch workers and merge results
+  (for/fold ([res (results #f 0 0 #f)])
+            ([worker workers])
+    (define worker-res (touch worker))
+    (results (or (results-foundbug? res) (results-foundbug? worker-res))
+             (+ (results-passed res) (results-passed worker-res))
+             (+ (results-discards res) (results-discards worker-res))
+             (or (results-counterexample res) (results-counterexample worker-res)))))
+
 
 (define (results->json-str search-time res)
   (format "[|{\"search-time\": ~a, \"foundbug\": ~a, \"passed\": ~a, \"discards\": ~a, \"counterexample\": \"~a\"}|]"
