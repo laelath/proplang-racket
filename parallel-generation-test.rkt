@@ -24,5 +24,5 @@
    (forall n #:contract exact-integer? #:gen gen:natural)
    (= (fib-exp n) (fib-acc n))))
 
-#;(run-loop 40 fibs-equiv-prop)
-#;(parallel-run-loop 40 fibs-equiv-prop)
+(run-loop 40 fibs-equiv-prop)
+(parallel-run-loop 40 fibs-equiv-prop)
