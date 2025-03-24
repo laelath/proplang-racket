@@ -16,7 +16,7 @@
              [discards 0])
     (if (= n tests)
         (results #f passed discards #f)
-        (let-values ([(res env) (generate-and-check p run-rackcheck-generator n)])
+        (let-values ([(res env) (generate-and-check p run-rackcheck-generator (inexact->exact (round (log (+ n 1) 2))))])
           (case res
             [(fail) (results #t passed discards env)]
             [(pass) (loop (add1 n) (add1 passed) discards)]

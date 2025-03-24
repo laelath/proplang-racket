@@ -33,7 +33,7 @@
         [(>= n tests) (results #f passed discards #f)]
         [(unbox found-counterexample?) (results #f passed discards #f)]
         [else
-         (let-values ([(res env) (generate-and-check p run-rackcheck-generator rng n)])
+         (let-values ([(res env) (generate-and-check p run-rackcheck-generator rng (inexact->exact (round (log (+ n 1) 2))))])
            (case res
              [(fail)
               (set-box! found-counterexample? #t)
